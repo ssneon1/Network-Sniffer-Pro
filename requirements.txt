@@ -1,0 +1,5 @@
+scapy
+customtkinter
+Flask
+Flask-SocketIO
+pyinstaller

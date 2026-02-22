@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Sniffer - Web Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .packet-row:hover {
+            background-color: #1e293b;
+            cursor: pointer;
+        }
+
+        .proto-tcp {
+            color: #3b82f6;
+        }
+
+        .proto-udp {
+            color: #10b981;
+        }
+
+        .proto-icmp {
+            color: #f59e0b;
+        }
+
+        .proto-http {
+            color: #8b5cf6;
+        }
+
+        .proto-https {
+            color: #ec4899;
+        }
+    </style>
+</head>
+
+<body class="p-6">
+    <div class="max-w-7xl mx-auto flex flex-col h-[90vh]">
+        <!-- Header -->
+        <header
+            class="flex justify-between items-center mb-6 shrink-0 bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-blue-500 rounded-lg shadow-lg shadow-blue-500/20">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z">
+                        </path>
+                    </svg>
+                </div>
+                <h1
+                    class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
+                    Network Sniffer Pro</h1>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <div class="relative">
+                    <input type="text" id="packetSearch" placeholder="Search packets..."
+                        class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 transition-all">
+                    <span class="absolute right-3 top-2.5 text-slate-500 italic text-xs">Search</span>
+                </div>
+                <div id="status-indicator"
+                    class="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border border-red-500/20 rounded-full">
+                    <div id="status-dot" class="w-2 h-2 bg-red-500 rounded-full"></div>
+                    <span id="status-text"
+                        class="text-xs font-semibold text-red-400 uppercase tracking-wider">Offline</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Packet List -->
+            <div class="lg:col-span-2 bg-slate-800 rounded-xl overflow-hidden shadow-2xl border border-slate-700">
+                <div class="p-4 bg-slate-700 font-semibold flex">
+                    <div class="w-1/4">Time</div>
+                    <div class="w-1/4">Source</div>
+                    <div class="w-1/4">Destination</div>
+                    <div class="w-1/8">Proto</div>
+                    <div class="w-1/8 px-4 text-right">Size</div>
+                </div>
+                <div id="packet-list" class="h-[60vh] overflow-y-auto divide-y divide-slate-700 scrollbar-hide">
+                    <!-- Packets will appear here -->
+                </div>
+            </div>
+
+            <!-- Details Panel -->
+            <div class="bg-slate-800 rounded-xl p-6 shadow-2xl border border-slate-700 sticky top-6 self-start">
+                <h2 class="text-xl font-bold mb-4 text-slate-300">Packet Details</h2>
+                <pre id="details"
+                    class="bg-slate-900 p-4 rounded-lg text-xs font-mono text-blue-300 whitespace-pre-wrap h-[530px] overflow-y-auto">Select a packet from the list to see full data...</pre>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const socket = io();
+        const packetList = document.getElementById('packet-list');
+        const packetSearch = document.getElementById('packetSearch');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+
+        socket.on('connect', () => {
+            statusText.innerText = 'Live Capture';
+            statusIndicator.classList.replace('bg-red-500/10', 'bg-green-500/10');
+            statusIndicator.classList.replace('border-red-500/20', 'border-green-500/20');
+            statusDot.classList.replace('bg-red-500', 'bg-green-500');
+            statusDot.classList.add('animate-pulse');
+            statusText.classList.replace('text-red-400', 'text-green-400');
+        });
+
+        packetSearch.oninput = (e) => {
+            const term = e.target.value.toLowerCase();
+            const rows = packetList.querySelectorAll('.packet-row');
+            rows.forEach(row => {
+                const text = row.innerText.toLowerCase();
+                row.style.display = text.includes(term) ? 'flex' : 'none';
+            });
+        };
+
+        socket.on('new_packet', (data) => {
+            const row = document.createElement('div');
+            const alertClass = data.is_alert ? 'bg-orange-900 bg-opacity-30 border-l-4 border-orange-500' : '';
+            row.className = `packet-row p-3 flex text-sm transition-colors ${alertClass}`;
+
+            // Check if it matches current search
+            const term = packetSearch.value.toLowerCase();
+            const content = `${data.time} ${data.src} ${data.dst} ${data.proto} ${data.info}`.toLowerCase();
+            if (term && !content.includes(term)) {
+                row.style.display = 'none';
+            }
+
+            const protoClass = `proto-${data.proto.toLowerCase()}`;
+            const securityText = data.is_alert ? `<span class="text-orange-400 font-bold">[${data.security}]</span>` : '';
+
+            row.innerHTML = `
+                <div class="w-1/6 text-slate-400 font-mono">${data.time}</div>
+                <div class="w-1/6 truncate pr-2">${data.src}</div>
+                <div class="w-1/6 truncate pr-2">${data.dst} ${securityText}</div>
+                <div class="w-1/12 font-bold ${protoClass}">${data.proto}</div>
+                <div class="w-1/12 text-right text-slate-400 px-4">${data.size} B</div>
+                <div class="w-1/3 truncate text-slate-500 pl-4 italic">${data.info}</div>
+            `;
+
+            row.onclick = () => {
+                detailsBox.innerText = data.details || "No extended data available.";
+            };
+
+            packetList.prepend(row);
+
+            // Limit shown packets
+            if (packetList.children.length > 200) {
+                packetList.removeChild(packetList.lastChild);
+            }
+        });
+
+        socket.on('disconnect', () => {
+            statusEl.innerText = 'Disconnected';
+            statusEl.classList.replace('bg-green-900', 'bg-red-900');
+            statusEl.classList.replace('text-green-100', 'text-red-100');
+        });
+    </script>
+</body>
+
+</html>
